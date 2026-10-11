@@ -10,6 +10,9 @@
     "start-picker": "Pick media",
     _execute_action: "Open menu",
   };
+  // Chrome has no commands.update; shortcuts are changed on its own page instead.
+  const CAN_EDIT_SHORTCUTS = typeof browser.commands.update === "function";
+  const CHROME_SHORTCUTS_PAGE = "chrome://extensions/shortcuts";
   const MODIFIER_CODES = /^(Shift|Control|Alt|Meta|OS)(Left|Right)$/;
   const KEY_NAMES = {
     Comma: "Comma", Period: "Period", Home: "Home", End: "End", PageUp: "PageUp",
@@ -132,6 +135,15 @@
       name.className = "shortcut-name";
       name.textContent = commandLabel(cmd);
 
+      if (!CAN_EDIT_SHORTCUTS) {
+        const keys = makeButton("", "Change " + commandLabel(cmd), openShortcutsPage);
+        keys.classList.add("keys");
+        appendShortcut(keys, cmd.shortcut);
+        row.append(name, keys);
+        shortcutList.appendChild(row);
+        continue;
+      }
+
       // Clicking the keys changes the shortcut; clicking again while recording cancels.
       const keys = makeButton("", isRecording ? "Cancel" : "Change " + commandLabel(cmd), () => {
         if (isRecording) stopRecording();
@@ -156,6 +168,10 @@
       row.append(name, keys, reset, remove);
       shortcutList.appendChild(row);
     }
+  }
+
+  function openShortcutsPage() {
+    browser.tabs.create({ url: CHROME_SHORTCUTS_PAGE }).then(() => window.close(), showError);
   }
 
   async function refreshCommands() {
@@ -278,7 +294,8 @@
   if (browser.commands.onChanged) {
     browser.commands.onChanged.addListener(() => refreshCommands().catch(showError));
   }
-  // Shortcuts may also be edited in Firefox's add-ons manager while the popup is open.
+  // Shortcuts may also be edited in Firefox's add-ons manager (or Chrome's shortcuts page)
+  // while the popup is open.
   window.addEventListener("focus", () => {
     if (recording === null) refreshCommands().catch(showError);
   });
