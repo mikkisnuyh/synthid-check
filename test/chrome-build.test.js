@@ -10,12 +10,12 @@ const { build, chromeManifest, merge, referencedFiles } = require("../scripts/bu
 const ROOT = path.join(__dirname, "..");
 const FIREFOX = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
 
-test("merge: objects merge, other values replace, null removes", () => {
+test("merge: objects merge, other values replace, null removes, +key appends", () => {
   const out = merge(
-    { a: { x: 1, y: 2 }, list: [1, 2], keep: true, drop: "me" },
-    { a: { y: 3, z: 4 }, list: [5], drop: null },
+    { a: { x: 1, y: 2 }, list: [1, 2], more: [1], keep: true, drop: "me" },
+    { a: { y: 3, z: 4 }, list: [5], "+more": [2, 3], "+fresh": [4], drop: null },
   );
-  assert.deepEqual(out, { a: { x: 1, y: 3, z: 4 }, list: [5], keep: true });
+  assert.deepEqual(out, { a: { x: 1, y: 3, z: 4 }, list: [5], more: [1, 2, 3], fresh: [4], keep: true });
 });
 
 test("Chrome manifest: service worker, Chrome names and limits", () => {
@@ -38,7 +38,13 @@ test("Chrome manifest: service worker, Chrome names and limits", () => {
     FIREFOX.permissions.filter((p) => p !== "menus"),
   );
   assert.deepEqual(m.host_permissions, FIREFOX.host_permissions);
-  assert.deepEqual(m.content_scripts, FIREFOX.content_scripts);
+  // Firefox's content scripts, plus the right-click target script Chrome needs.
+  assert.deepEqual(m.content_scripts.slice(0, -1), FIREFOX.content_scripts);
+  const target = m.content_scripts.at(-1);
+  assert.deepEqual(target.js, ["src/content/context-target.js"]);
+  assert.deepEqual(target.matches, ["<all_urls>"]);
+  assert.equal(target.all_frames, true);
+  assert.equal(target.run_at, "document_start");
   assert.deepEqual(m.commands, FIREFOX.commands);
   assert.equal(m.action.default_popup, FIREFOX.action.default_popup);
 

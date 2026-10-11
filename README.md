@@ -25,9 +25,18 @@ SynthID is Google DeepMind's invisible watermark. Google's AI products embed it,
 
 Firefox asks for access to all websites when you install the extension, and that's the only permission prompt. You can turn it off later in about:addons → SynthID Check → Permissions; that is Firefox's own control. Checks then can't download files from other sites, and the extension tells you so: "Turn it back on in its settings: click the SynthID Check button in the toolbar, then Settings." There, **Allow access** turns it back on (it only shows while access is off). (Firefox only lets an extension open its toolbar menu from a click, so the notice can't open it for you.) Turning access off stays in about:addons.
 
+## Chrome
+
+The same extension runs in Chrome 148 or later (and other Chromium browsers of that version or later). The differences:
+
+- **Website access:** Chrome's own control is on `chrome://extensions` → SynthID Check → Details → Site access. If you set it to "On click" or "On specific sites", the extension asks for access when a check needs it, and **Allow access** in its settings works as in Firefox.
+- **Keyboard shortcuts:** Chrome doesn't let extensions change their shortcuts. Clicking a shortcut in the settings opens Chrome's shortcuts page (`chrome://extensions/shortcuts`).
+- **Private windows:** extensions are off in Incognito until you turn on "Allow in Incognito" on the extension's Details page.
+- **Toolbar button:** Chrome puts new extensions in the Extensions menu (the puzzle piece). Pin SynthID Check to keep its button in the toolbar.
+
 ## Requirements
 
-- Firefox 140 or later
+- Firefox 140 or later, or Chrome 148 or later
 - A Google, Apple, or ChatGPT account to sign in on synthid.com
 - synthid.com has daily detection limits per account
 
@@ -35,13 +44,14 @@ Firefox asks for access to all websites when you install the extension, and that
 
 | Permission | Reason |
 |-----------|--------|
-| `menus` | Right-click context menu items |
+| `menus` (`contextMenus` in Chrome) | Right-click context menu items |
 | `activeTab` | To detect media on the current tab |
 | `scripting` | To inject media detection and picker scripts |
 | `storage` | To store extension settings in Firefox Sync storage |
 | `clipboardWrite` | To copy images to the clipboard as a fallback |
 | Access to all websites (`host_permissions: <all_urls>`) | Granted once when you install. Needed to download the original file from whichever site hosts it (often a different site than the page, such as an image CDN). Files are only downloaded when you start a check. |
 | Content script on synthid.com | To attach the file to synthid.com's own upload form and show status (it never signs in or accepts terms for you) |
+| Content script on all sites, Chrome only | Chrome can't tell the extension which element you right-clicked (Firefox can), so a small script remembers it for "Find media under the cursor". It keeps only a reference to that element, reads nothing and sends nothing. |
 | Content script on all sites (only while the drop zone is on) | To show the drop zone while you drag an image. It only listens for drag events; it reads nothing and sends nothing until you drop an image on the zone. It uses the existing `scripting` and website access permissions, so there is no extra prompt. |
 
 **Data collection:** This extension declares `websiteContent` in its manifest. When you initiate a check, the file you choose is downloaded from the site hosting it and sent to synthid.com (Google's service). No other data is collected or sent.
@@ -56,9 +66,12 @@ The extension only fills synthid.com's own upload form with one file you select.
 npm install          # Install dependencies
 npm test             # Run unit tests
 npm run lint         # Lint the code
+npm run test:chrome  # Load the Chrome build in Chromium and run the main flows
 npm start            # Run in Firefox with web-ext (web-ext run)
 npm run test:live    # End-to-end test against live synthid.com in Chromium
 ```
+
+`npm run test:chrome` uses Playwright's Chromium (`npx playwright install chromium` once), or the browser at `CHROME_PATH`. It must be Chromium or Chrome for Testing 148 or later: branded Google Chrome ignores `--load-extension`. synthid.com is replaced by a local stand-in page, so it never uses the live site.
 
 To load the extension temporarily in Firefox:
 1. Navigate to `about:debugging#/runtime/this-firefox`
@@ -72,11 +85,11 @@ npm run build        # Firefox: zip in web-ext-artifacts/
 npm run build:chrome # Chrome: unpacked in dist/chrome, zip in web-ext-artifacts/
 ```
 
-The Chrome version is a work in progress. Both versions share the code in `src/`. `manifest.json` is the Firefox manifest; the Chrome build merges `chrome/manifest.json` over it (Chrome 148 or later, a service worker instead of background scripts, PNG icons, the short description) and writes the result to `dist/chrome`. To try it, open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and select `dist/chrome`.
+Both versions share the code in `src/`. `manifest.json` is the Firefox manifest; the Chrome build merges `chrome/manifest.json` over it (Chrome 148 or later, a service worker instead of background scripts, PNG icons, the short description) and writes the result to `dist/chrome`. To try it, open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and select `dist/chrome`.
 
 ## CI and releases
 
-GitHub Actions runs `npm run lint`, `npm test` (on Node 22 and 24) and both builds on every pull request and push to `main`. The Firefox and Chrome zips are attached to each run as artifacts. `npm run test:live` isn't run in CI because it uses the live synthid.com.
+GitHub Actions runs `npm run lint`, `npm test` (on Node 22 and 24), `npm run test:chrome` and both builds on every pull request and push to `main`. The Firefox and Chrome zips are attached to each run as artifacts. `npm run test:live` isn't run in CI because it uses the live synthid.com.
 
 To release, bump `version` in both `manifest.json` and `package.json`, then push a matching tag:
 
@@ -85,6 +98,8 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 
 The release workflow checks that the tag matches both versions, runs lint and tests, builds, and creates a GitHub release with the zip. If the repository has the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets (API credentials from addons.mozilla.org), it also submits the build to AMO for signing. The channel is `listed` by default; set the `AMO_CHANNEL` repository variable to `unlisted` to get a self-distributed signed `.xpi`, which is then attached to the release as well.
+
+After the Firefox steps, it builds the Chrome zip and attaches it to the release too; a failed Chrome build never holds up the Firefox release. If the repository has the `CWS_EXTENSION_ID`, `CWS_PUBLISHER_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET` and `CWS_REFRESH_TOKEN` secrets, it then uploads the zip to the Chrome Web Store and submits it for review. The first version has to be uploaded by hand in the Chrome Web Store developer dashboard, which is where the extension ID comes from.
 
 ## Project structure
 

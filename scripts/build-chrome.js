@@ -3,7 +3,8 @@
  *
  * manifest.json is the Firefox manifest and the source of truth. The Chrome manifest is
  * that manifest with chrome/manifest.json merged over it (objects merge, other values
- * replace, null removes a key), plus the permission names Chrome spells differently.
+ * replace, null removes a key, a "+key" array is appended to "key"), plus the permission
+ * names Chrome spells differently.
  * The code in src/ is shared as is. Chrome runs the background as a service worker, so
  * the build writes one that loads the same scripts Firefox lists in background.scripts. */
 "use strict";
@@ -28,7 +29,8 @@ function isObject(v) {
 function merge(base, overrides) {
   const out = { ...base };
   for (const [key, value] of Object.entries(overrides)) {
-    if (value === null) delete out[key];
+    if (key.startsWith("+")) out[key.slice(1)] = [...(out[key.slice(1)] || []), ...value];
+    else if (value === null) delete out[key];
     else if (isObject(value) && isObject(out[key])) out[key] = merge(out[key], value);
     else out[key] = value;
   }

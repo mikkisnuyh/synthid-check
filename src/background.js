@@ -55,6 +55,8 @@ const Pending = {
 };
 
 const SYNTHID_URL = "https://synthid.com/";
+// Chrome's executeScript can't return a Blob (it arrives as {}), but an ArrayBuffer survives.
+const BYTES_FROM_PAGES = globalThis.location?.protocol === "chrome-extension:";
 const POPUP_PAGE = "src/popup/popup.html";
 const ALL_SITES = "<all_urls>";
 const WORKING_NOTICE_DELAY_MS = 800;
@@ -318,7 +320,13 @@ async function onFindMedia(info, tab, access = Promise.resolve(true)) {
       target: { tabId: tab.id, frameIds: [frameId] },
       injectImmediately: true,
       func: (targetId) => {
-        const el = targetId != null ? browser.menus.getTargetElement(targetId) : null;
+        // Firefox knows the clicked element; in Chrome, context-target.js remembers it.
+        const el =
+          targetId != null && typeof browser.menus?.getTargetElement === "function"
+            ? browser.menus.getTargetElement(targetId)
+            : typeof globalThis.SynthIDContextTarget?.take === "function"
+              ? SynthIDContextTarget.take()
+              : null;
         const m = el ? SynthIDResolve.fromElement(el) : null;
         return m ? { kind: m.kind, url: m.url, isBlob: m.isBlob, isMediaSource: m.isMediaSource } : null;
       },
@@ -553,18 +561,18 @@ async function fetchInFrame(url, ctx, frameId = ctx.frameId) {
   const [res] = await browser.scripting.executeScript({
     target: { tabId: ctx.tab.id, frameIds: [frameId] },
     injectImmediately: true,
-    func: async (u, max) => {
+    func: async (u, max, bytes) => {
       try {
         const r = await fetch(u, { credentials: "include", cache: "force-cache" });
         if (!r.ok) return { ok: false, status: r.status };
         if (Number(r.headers.get("content-length")) > max) return { ok: false, tooLarge: true };
         const blob = await r.blob();
-        return { ok: true, blob, type: blob.type, url: r.url };
+        return { ok: true, blob: bytes ? await blob.arrayBuffer() : blob, type: blob.type, url: r.url };
       } catch (e) {
         return { ok: false, status: "network error" };
       }
     },
-    args: [url, Media.MAX_BYTES],
+    args: [url, Media.MAX_BYTES, BYTES_FROM_PAGES],
   });
   const out = res && res.result;
   if (!out) return null;
@@ -583,8 +591,11 @@ async function readBlobInFrame(media, ctx) {
     const [res] = await browser.scripting.executeScript({
       target: { tabId: ctx.tab.id, frameIds: [ctx.frameId] },
       injectImmediately: true,
-      func: (u) => SynthIDResolve.readBlobUrl(u),
-      args: [media.url],
+      func: async (u, bytes) => {
+        const r = await SynthIDResolve.readBlobUrl(u);
+        return bytes && r && r.ok ? { ...r, blob: await r.blob.arrayBuffer() } : r;
+      },
+      args: [media.url, BYTES_FROM_PAGES],
     });
     out = res && res.result;
   } catch (e) {
