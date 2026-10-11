@@ -244,6 +244,9 @@ function toBlob(value, type) {
 // ---------------------------------------------------------------------------
 // Menus
 
+// Chrome calls the menus API contextMenus.
+const menus = browser.menus || browser.contextMenus;
+
 // onInstalled and onStartup can both fire (e.g. the first start after an update),
 // so rebuilds run one at a time; interleaved removeAll/create calls would
 // otherwise create duplicate ids.
@@ -251,14 +254,14 @@ let menusBuild = Promise.resolve();
 
 function createMenus() {
   menusBuild = menusBuild
-    .then(() => browser.menus.removeAll())
+    .then(() => menus.removeAll())
     .then(() => {
-      browser.menus.create({
+      menus.create({
         id: "check-media",
         title: "Check with SynthID",
         contexts: ["image", "video", "audio"],
       });
-      browser.menus.create({
+      menus.create({
         id: "find-media",
         title: "Find media under the cursor and check with SynthID",
         contexts: ["page", "frame", "link"],
@@ -279,7 +282,7 @@ browser.runtime.onStartup.addListener(() => {
   Pending.clear().catch((e) => console.warn("SynthID Check: clearing pending files failed", e));
 });
 
-browser.menus.onClicked.addListener((info, tab) => {
+menus.onClicked.addListener((info, tab) => {
   if (!tab || tab.id == null || tab.id < 0) return;
   if (info.menuItemId !== "check-media" && info.menuItemId !== "find-media") return;
   // Synchronously, before any await: only a user-action handler may prompt.

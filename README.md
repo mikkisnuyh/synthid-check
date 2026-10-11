@@ -68,12 +68,15 @@ To load the extension temporarily in Firefox:
 ## Build
 
 ```bash
-npm run build        # Create a production build
+npm run build        # Firefox: zip in web-ext-artifacts/
+npm run build:chrome # Chrome: unpacked in dist/chrome, zip in web-ext-artifacts/
 ```
+
+The Chrome version is a work in progress. Both versions share the code in `src/`. `manifest.json` is the Firefox manifest; the Chrome build merges `chrome/manifest.json` over it (Chrome 148 or later, a service worker instead of background scripts, PNG icons, the short description) and writes the result to `dist/chrome`. To try it, open `chrome://extensions`, turn on Developer mode, click **Load unpacked** and select `dist/chrome`.
 
 ## CI and releases
 
-GitHub Actions runs `npm run lint`, `npm test` (on Node 22 and 24) and `npm run build` on every pull request and push to `main`. The built zip is attached to each run as an artifact. `npm run test:live` isn't run in CI because it uses the live synthid.com.
+GitHub Actions runs `npm run lint`, `npm test` (on Node 22 and 24) and both builds on every pull request and push to `main`. The Firefox and Chrome zips are attached to each run as artifacts. `npm run test:live` isn't run in CI because it uses the live synthid.com.
 
 To release, bump `version` in both `manifest.json` and `package.json`, then push a matching tag:
 
@@ -85,7 +88,7 @@ The release workflow checks that the tag matches both versions, runs lint and te
 
 ## Project structure
 
-This is a plain MV3 Firefox extension with no build step. Scripts use the `browser.*` promise API. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details on files, messaging flows, and how media detection and upload work.
+This is a plain MV3 Firefox extension with no build step for Firefox; the Chrome build only assembles a manifest and a service worker around the same files. Scripts use the `browser.*` promise API. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details on files, messaging flows, and how media detection and upload work.
 
 ## Credits
 

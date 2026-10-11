@@ -260,6 +260,11 @@ function makeEnv(opts = {}) {
       onChanged: events.storageOnChanged,
     },
   };
+  if (opts.chrome) {
+    // Chrome has the same API under the name contextMenus.
+    browser.contextMenus = browser.menus;
+    delete browser.menus;
+  }
   env.browser = browser;
 
   env.indexedDB = new IDBFactory();
@@ -424,6 +429,20 @@ test("onInstalled creates the two menu items with the contract ids and contexts"
     { id: "check-media", title: "Check with SynthID", contexts: ["image", "video", "audio"] },
     { id: "find-media", title: "Find media under the cursor and check with SynthID", contexts: ["page", "frame", "link"] },
   ]);
+});
+
+test("Chrome: menus are created and clicks handled through contextMenus", async () => {
+  const env = await loadBackground({ chrome: true });
+  env.events.onInstalled.fire({ reason: "install" });
+  await waitFor(() => env.calls.menusCreate.length === 2, "two contextMenus.create calls");
+  assert.deepEqual(env.calls.menusCreate.map((m) => m.id), ["check-media", "find-media"]);
+  assert.equal(env.events.menusOnClicked.listeners.length, 1);
+
+  env.fetchHandler = async () => pngResponse();
+  const tab = env.addTab(sourceTab());
+  env.click(imageClick(CDN_PNG), tab);
+  await waitFor(() => env.calls.tabsCreate.length === 1, "tabs.create");
+  assert.equal(env.calls.fetch[0].url, CDN_PNG);
 });
 
 // ---------------------------------------------------------------------------

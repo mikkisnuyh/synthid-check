@@ -6,6 +6,8 @@ It never calls synthid.com's backend directly, never auto-accepts the site's Ter
 
 No build step. Plain scripts, using the `browser.*` promise API.
 
+Chrome (work in progress): `npm run build:chrome` runs `scripts/build-chrome.js`, which copies `src/` and `icons/` to `dist/chrome`, merges `chrome/manifest.json` over `manifest.json` (objects merge, other values replace, `null` removes a key), renames the `menus` permission to `contextMenus`, and writes `service-worker.js`, which `importScripts` the files listed in `background.scripts`. It requires Chrome 148, which has the `browser.*` namespace, and opts in to `"message_serialization": "structured_clone"` so Blobs cross runtime messaging as in Firefox. Private windows run a separate copy (`"incognito": "split"`). Code that differs by browser checks for the API (`browser.menus || browser.contextMenus`) rather than the browser.
+
 Scripts are injected on demand, with one exception: while the `dropZone` setting is on, `resolve.js` and `dropzone.js` are registered as content scripts for all pages and frames (see Drop zone).
 
 ## Files

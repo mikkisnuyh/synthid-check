@@ -5,6 +5,8 @@ export default {
     "web-ext-config.mjs",
     "test",
     "scripts",
+    "chrome",
+    "dist",
     "node_modules",
     "README.md",
     "PRIVACY.md",

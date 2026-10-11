@@ -9,6 +9,7 @@
     "test:live": "node scripts/test-synthid-live.js",
     "test": "node --test \"test/*.test.js\"",
     "build": "web-ext build --overwrite-dest",
+    "build:chrome": "node scripts/build-chrome.js && web-ext build --source-dir dist/chrome --filename \"{name}-chrome-{version}.zip\" --overwrite-dest",
     "start": "web-ext run"
   },
   "devDependencies": {

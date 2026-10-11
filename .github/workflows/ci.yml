@@ -56,3 +56,9 @@ jobs:
           name: extension-${{ github.sha }}
           path: web-ext-artifacts/*.zip
           if-no-files-found: error
+      - run: rm -rf web-ext-artifacts && npm run build:chrome
+      - uses: actions/upload-artifact@v7
+        with:
+          name: extension-chrome-${{ github.sha }}
+          path: web-ext-artifacts/*.zip
+          if-no-files-found: error

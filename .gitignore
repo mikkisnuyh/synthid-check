@@ -3,3 +3,4 @@ web-ext-artifacts/
 test-results/
 *.zip
 *.xpi
+dist/
