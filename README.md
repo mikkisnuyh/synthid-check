@@ -71,7 +71,7 @@ npm start            # Run in Firefox with web-ext (web-ext run)
 npm run test:live    # End-to-end test against live synthid.com in Chromium
 ```
 
-`npm run test:chrome` uses Playwright's Chromium (`npx playwright install chromium` once), or the browser at `CHROME_PATH`. It must be Chromium or Chrome for Testing 148 or later: branded Google Chrome ignores `--load-extension`. synthid.com is replaced by a local stand-in page, so it never uses the live site.
+`npm run test:chrome` builds the Chrome zip, unpacks it and loads it with Playwright's Chromium (`npx playwright install chromium` once), or the browser at `CHROME_PATH`. It must be Chromium or Chrome for Testing 148 or later: branded Google Chrome ignores `--load-extension`. synthid.com is replaced by a local stand-in page, so it never uses the live site.
 
 To load the extension temporarily in Firefox:
 1. Navigate to `about:debugging#/runtime/this-firefox`

@@ -8,9 +8,9 @@
     "lint": "web-ext lint",
     "test:live": "node scripts/test-synthid-live.js",
     "test": "node --test \"test/*.test.js\"",
-    "test:chrome": "node scripts/build-chrome.js && node --test \"test/chrome/*.test.js\"",
+    "test:chrome": "npm run build:chrome && node --test \"test/chrome/*.test.js\"",
     "build": "web-ext build --overwrite-dest",
-    "build:chrome": "node scripts/build-chrome.js && web-ext build --source-dir dist/chrome --filename \"{name}-chrome-{version}.zip\" --overwrite-dest",
+    "build:chrome": "node scripts/build-chrome.js && web-ext build --no-config-discovery --source-dir dist/chrome --filename \"{name}-chrome-{version}.zip\" --overwrite-dest",
     "start": "web-ext run"
   },
   "devDependencies": {

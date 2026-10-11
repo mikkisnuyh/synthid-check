@@ -1,6 +1,6 @@
 "use strict";
 
-/* Loads the Chrome build (dist/chrome) into Chromium and runs the main flows end to end
+/* Loads the Chrome zip (the file that is released) into Chromium and runs the main flows end to end
  * against local pages. synthid.com resolves to a local HTTPS stand-in with a file input
  * (self-signed certificate made with openssl), so this never touches the live site. Run with `npm run test:chrome`; set CHROME_PATH to use
  * a Chromium other than Playwright's own (it must be Chrome 148 or later, and not a branded
@@ -16,7 +16,10 @@ const os = require("node:os");
 const path = require("node:path");
 const { chromium } = require("playwright");
 
-const EXT = path.join(__dirname, "..", "..", "dist", "chrome");
+const ROOT = path.join(__dirname, "..", "..");
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8")).version;
+const ZIP = path.join(ROOT, "web-ext-artifacts", `synthid_check-chrome-${VERSION}.zip`);
+let EXT;
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
@@ -59,7 +62,7 @@ let worker;
 let extensionId;
 
 before(async () => {
-  assert.ok(fs.existsSync(path.join(EXT, "manifest.json")), "build dist/chrome first (npm run test:chrome does)");
+  assert.ok(fs.existsSync(ZIP), `build ${path.relative(ROOT, ZIP)} first (npm run test:chrome does)`);
   server = http.createServer((req, res) => {
     if (req.url === "/img.png") {
       res.writeHead(200, { "content-type": "image/png" });
@@ -73,6 +76,9 @@ before(async () => {
   origin = `http://127.0.0.1:${server.address().port}`;
 
   profile = fs.mkdtempSync(path.join(os.tmpdir(), "synthid-chrome-profile-"));
+  // Test the zip, not dist/chrome, so a file left out of the package fails here.
+  EXT = path.join(profile, "extension");
+  execFileSync("unzip", ["-q", ZIP, "-d", EXT]);
   const key = path.join(profile, "key.pem");
   const cert = path.join(profile, "cert.pem");
   execFileSync("openssl", [

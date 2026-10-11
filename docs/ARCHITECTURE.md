@@ -20,7 +20,7 @@ No build step. Plain scripts, using the `browser.*` promise API.
 - **Drop zone.** Chrome makes an image inside a link the `dragstart` target, so the `application/x-moz-nativeimage` check isn't needed there.
 - **Manifest.** PNG icons (Chrome doesn't show SVG manifest icons), a description of at most 132 characters, no `browser_specific_settings`.
 
-`npm run test:chrome` (`test/chrome/smoke.test.js`) loads `dist/chrome` in Chromium with Playwright and runs Check with SynthID, Find media under the cursor, a `blob:` image, drag and drop (plain and linked images) and the settings view, against a local HTTPS stand-in for synthid.com (`--host-resolver-rules`).
+`npm run test:chrome` (`test/chrome/smoke.test.js`) builds the Chrome zip and loads that zip, unpacked, in Chromium with Playwright and runs Check with SynthID, Find media under the cursor, a `blob:` image, drag and drop (plain and linked images) and the settings view, against a local HTTPS stand-in for synthid.com (`--host-resolver-rules`).
 
 Scripts are injected on demand, with one exception: while the `dropZone` setting is on, `resolve.js` and `dropzone.js` are registered as content scripts for all pages and frames (see Drop zone).
 
