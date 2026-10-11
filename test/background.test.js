@@ -22,6 +22,7 @@ const assert = Object.assign((...args) => strictAssert(...args), strictAssert, {
 const ROOT = path.join(__dirname, "..");
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, "manifest.json"), "utf8"));
 const SCRIPTS = MANIFEST.background.scripts;
+const CHROME_MANIFEST = require("../scripts/build-chrome.js").chromeManifest();
 
 const EXT_ID = "@synthid-check";
 const EXT_BASE = "moz-extension://test-uuid/";
@@ -155,6 +156,7 @@ function makeEnv(opts = {}) {
     runtime: {
       id: EXT_ID,
       getURL: (p) => EXT_BASE + p,
+      getManifest: () => structuredClone(opts.chrome ? CHROME_MANIFEST : MANIFEST),
       onInstalled: events.onInstalled,
       onStartup: events.onStartup,
       onMessage: events.onMessage,
@@ -235,7 +237,10 @@ function makeEnv(opts = {}) {
       },
     },
     tabs: {
-      query: async () => [...env.tabs.values()].filter((t) => t.active).slice(-1),
+      query: async (q = {}) => {
+        const all = [...env.tabs.values()];
+        return q.active ? all.filter((t) => t.active).slice(-1) : all;
+      },
       create: async (props) => {
         calls.tabsCreate.push(props);
         if (opts.failOpenerTabId && props.openerTabId !== undefined) {
@@ -1054,13 +1059,102 @@ test("Chrome: find-media says nothing was found when no right-click was remember
   const env = await loadBackground({ chrome: true });
   env.scriptHandler = (d) => {
     if (!d.func) return [{}];
-    return [{ result: runInjected(d, { browser: {}, SynthIDResolve: { fromElement: () => assert.fail("no element") } }) }];
+    const globals = {
+      browser: {},
+      SynthIDContextTarget: { take: () => null },
+      SynthIDResolve: { fromElement: () => assert.fail("no element") },
+    };
+    return [{ result: runInjected(d, globals) }];
   };
   const tab = env.addTab(sourceTab());
   env.click({ menuItemId: "find-media", pageUrl: PAGE_URL, frameId: 0 }, tab);
   await waitFor(() => bannerCalls(env, 5).length === 1, "notice");
   assert.equal(bannerCalls(env, 5)[0].args[0].message, "No image, video or audio found here.");
   assert.equal(env.synthidTabs().length, 0);
+  assert.ok(!env.calls.executeScript.some((d) => (d.files || []).includes("src/content/picker.js")));
+});
+
+// Chrome's find-media script in a page where context-target.js never ran.
+function noTargetScript(onOther = () => [{ result: undefined }]) {
+  return (d) => {
+    if (d.func && d.args && d.args.length === 1 && d.args[0] === null) {
+      return [{ result: runInjected(d, { browser: {}, SynthIDResolve: { fromElement: () => assert.fail("no element") } }) }];
+    }
+    return d.func ? onOther(d) : [{}];
+  };
+}
+
+test("Chrome: find-media starts pick mode when context-target.js isn't in the page", async () => {
+  const env = await loadBackground({ chrome: true });
+  env.scriptHandler = noTargetScript();
+  const tab = env.addTab(sourceTab());
+  env.click({ menuItemId: "find-media", pageUrl: PAGE_URL, frameId: 0 }, tab);
+  await waitFor(
+    () => env.calls.executeScript.find((d) => (d.files || []).includes("src/content/picker.js")),
+    "picker injection",
+  );
+  const picker = env.calls.executeScript.find((d) => (d.files || []).includes("src/content/picker.js"));
+  assert.deepEqual(picker.target, { tabId: tab.id, frameIds: [0] });
+  await tick();
+  assert.equal(bannerCalls(env, 5).length, 0);
+});
+
+test("Chrome: find-media shows the nothing-found notice when pick mode can't start either", async () => {
+  const env = await loadBackground({ chrome: true });
+  const handler = noTargetScript();
+  env.scriptHandler = (d) => {
+    if ((d.files || []).includes("src/content/picker.js")) throw new Error("Cannot access contents of the page");
+    return handler(d);
+  };
+  env.click({ menuItemId: "find-media", pageUrl: PAGE_URL, frameId: 0 }, env.addTab(sourceTab()));
+  await waitFor(() => bannerCalls(env, 5).length === 1, "notice");
+  assert.equal(bannerCalls(env, 5)[0].args[0].message, "No image, video or audio found here.");
+});
+
+test("Chrome: Check with SynthID on a blob: image uses the click's srcUrl when context-target.js isn't there", async () => {
+  const env = await loadBackground({ chrome: true });
+  const blobUrl = "blob:https://example.com/1234";
+  const read = [];
+  env.scriptHandler = noTargetScript((d) => {
+    if (d.args && d.args[0] === blobUrl) {
+      read.push(d.args);
+      // An ArrayBuffer of the worker's own realm, as Chrome delivers it.
+      const bytes = new (vm.runInContext("Uint8Array", env.context))(PNG);
+      return [{ result: { ok: true, blob: bytes.buffer, type: "image/png" } }];
+    }
+    return [{ result: undefined }];
+  });
+  env.click(imageClick(blobUrl), env.addTab(sourceTab()));
+  await waitFor(() => env.synthidTabs().length === 1, "synthid tab");
+  assert.deepEqual(read, [[blobUrl, true]]);
+  assert.equal(bannerCalls(env, 5).length, 0);
+});
+
+test("Chrome: onInstalled loads context-target.js into the tabs that are already open", async () => {
+  const env = await loadBackground({ chrome: true });
+  env.addTab({ id: 1, active: false });
+  env.addTab({ id: 2, url: "chrome://settings/" });
+  env.scriptHandler = (d) => {
+    if (d.target.tabId === 2) throw new Error("Cannot access a chrome:// URL");
+    return [{}];
+  };
+  env.events.onInstalled.fire({ reason: "update" });
+  await waitFor(() => env.calls.executeScript.length === 2, "two injections");
+  for (const [i, d] of env.calls.executeScript.entries()) {
+    assert.deepEqual(d.target, { tabId: i + 1, allFrames: true });
+    assert.deepEqual(d.files, ["src/content/context-target.js"]);
+  }
+  await tick();
+  assert.equal(env.calls.consoleWarn.length, 0);
+});
+
+test("Firefox: onInstalled injects nothing into open tabs", async () => {
+  const env = await loadBackground();
+  env.addTab({ id: 1 });
+  env.events.onInstalled.fire({ reason: "update" });
+  await waitFor(() => env.calls.menusCreate.length === 2, "menus");
+  await tick();
+  assert.equal(env.calls.executeScript.length, 0);
 });
 
 test("find-media on a page whose media is same-origin still works when the background fetch is unavailable", async () => {

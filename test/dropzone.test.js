@@ -610,6 +610,22 @@ test("storage.onChanged for dropZoneCorner makes the next drag re-read it", asyn
   assert.ok(hostEl(w));
 });
 
+test("turning the drop zone off hides a shown zone and stops later drags; turning it on again resumes", async () => {
+  const storage = makeStorage();
+  const w = setup(IMG, { storage });
+  await startImageDrag(w);
+  assert.ok(hostEl(w));
+  storage.change({ dropZone: { newValue: false } }, "local");
+  assert.ok(hostEl(w), "other storage areas are ignored");
+  storage.change({ dropZone: { oldValue: true, newValue: false } });
+  assert.equal(hostEl(w), null);
+  await startImageDrag(w);
+  assert.equal(hostEl(w), null);
+  storage.change({ dropZone: { oldValue: false, newValue: true } });
+  await startImageDrag(w);
+  assert.ok(hostEl(w));
+});
+
 test("invalid corner values, a rejecting get and a missing or throwing storage API still show the zone", async () => {
   let storage = makeStorage({ dropZoneCorner: "middle" });
   let w = setup(IMG, { storage });
