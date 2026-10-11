@@ -296,12 +296,39 @@ browser.runtime.onInstalled.addListener(() => {
   createMenus();
   // An update may change the script list; refresh the registered definition.
   syncDropZone(true);
+  injectContextTarget();
 });
 browser.runtime.onStartup.addListener(() => {
   createMenus();
   // Tab ids restart each session; a stale file must not attach to an unrelated tab.
   Pending.clear().catch((e) => console.warn("SynthID Check: clearing pending files failed", e));
 });
+
+// Chrome only: context-target.js is a manifest content script there, and Chrome doesn't run
+// those in tabs that were already open when the extension was installed or updated. Without it,
+// "Find media under the cursor" has no element to start from until the page is reloaded.
+const CONTEXT_TARGET_SCRIPT = "src/content/context-target.js";
+
+async function injectContextTarget() {
+  const declared = (browser.runtime.getManifest().content_scripts || []).some((cs) =>
+    (cs.js || []).includes(CONTEXT_TARGET_SCRIPT),
+  );
+  if (!declared) return; // Firefox: menus.getTargetElement does this job.
+  let tabs = [];
+  try {
+    tabs = await browser.tabs.query({});
+  } catch (e) {
+    console.warn("SynthID Check: listing tabs failed", e);
+  }
+  // Fails on pages extensions can't script (and on discarded tabs); those load it when opened.
+  await Promise.all(
+    tabs.map((tab) =>
+      browser.scripting
+        .executeScript({ target: { tabId: tab.id, allFrames: true }, files: [CONTEXT_TARGET_SCRIPT], injectImmediately: true })
+        .catch(() => {}),
+    ),
+  );
+}
 
 menus.onClicked.addListener((info, tab) => {
   if (!tab || tab.id == null || tab.id < 0) return;
@@ -340,12 +367,11 @@ async function onFindMedia(info, tab, access = Promise.resolve(true)) {
       injectImmediately: true,
       func: (targetId) => {
         // Firefox knows the clicked element; in Chrome, context-target.js remembers it.
-        const el =
-          targetId != null && typeof browser.menus?.getTargetElement === "function"
-            ? browser.menus.getTargetElement(targetId)
-            : typeof globalThis.SynthIDContextTarget?.take === "function"
-              ? SynthIDContextTarget.take()
-              : null;
+        const canGet = typeof browser.menus?.getTargetElement === "function";
+        const canTake = typeof globalThis.SynthIDContextTarget?.take === "function";
+        // Chrome keeps manifest content scripts out of pages whose site access is "On click".
+        if (!canGet && !canTake) return { noTarget: true };
+        const el = canGet ? (targetId != null ? browser.menus.getTargetElement(targetId) : null) : SynthIDContextTarget.take();
         const m = el ? SynthIDResolve.fromElement(el) : null;
         return m ? { kind: m.kind, url: m.url, isBlob: m.isBlob, isMediaSource: m.isMediaSource } : null;
       },
@@ -355,7 +381,15 @@ async function onFindMedia(info, tab, access = Promise.resolve(true)) {
   } catch (e) {
     console.warn("SynthID Check: couldn't inspect the page", e);
   }
+  const noTarget = Boolean(media && media.noTarget);
+  if (noTarget) media = null;
+  // "Check with SynthID" on a blob: URL: the URL alone is enough to read it.
+  if (!media && info.srcUrl) {
+    media = { kind: info.mediaType || "image", url: info.srcUrl, isBlob: /^blob:/i.test(info.srcUrl), isMediaSource: false };
+  }
   if (!media || !media.url) {
+    // Nothing tells us what was right-clicked; let the user click it instead.
+    if (noTarget && (await startPicker(tab.id))) return;
     notify(tab.id, { state: "info", message: TEXT.nothingFound });
     return;
   }

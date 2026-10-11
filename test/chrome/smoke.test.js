@@ -195,6 +195,40 @@ test("Find media under the cursor: starts from the element that was right-clicke
   await page.close();
 });
 
+test("Find media without context-target.js: onInstalled loads it into open tabs, else pick mode starts", async () => {
+  const page = await sourcePage();
+  // As in a tab that was open before an install or update: the content script never ran.
+  const contextTarget = (op) =>
+    worker.evaluate(
+      async ({ url, op }) => {
+        const [tab] = await browser.tabs.query({ url });
+        if (op === "inject") await injectContextTarget();
+        const [r] = await browser.scripting.executeScript({
+          target: { tabId: tab.id },
+          args: [op],
+          func: (o) => {
+            if (o === "remove") delete globalThis.SynthIDContextTarget;
+            return typeof globalThis.SynthIDContextTarget;
+          },
+        });
+        return r.result;
+      },
+      { url: page.url(), op },
+    );
+  assert.equal(await contextTarget("remove"), "undefined");
+  assert.equal(await contextTarget("inject"), "object");
+
+  assert.equal(await contextTarget("remove"), "undefined");
+  await page.click("#overlay", { button: "right" });
+  await menuClick(page, { menuItemId: "find-media" });
+  await page.waitForSelector('[data-synthid-picker="hint"]');
+  await page.click("#plain");
+  const file = await attachedFile();
+  assert.deepEqual(file.bytes, Array.from(PNG));
+  await closeSynthidTabs();
+  await page.close();
+});
+
 test("a blob: image is read inside the page and arrives intact", async () => {
   const page = await sourcePage();
   await page.click("#blobimg", { button: "right" });

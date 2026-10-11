@@ -72,6 +72,8 @@
   let probe = null;
   // The corner setting, read once and dropped when it changes.
   let cornerSetting = null;
+  // Turning the drop zone off unregisters this script for new pages; this stops it in open ones.
+  let enabled = true;
 
   function getCorner() {
     if (!cornerSetting) {
@@ -89,7 +91,12 @@
 
   try {
     browser.storage.onChanged.addListener((changes, area) => {
-      if (area === "sync" && changes && "dropZoneCorner" in changes) cornerSetting = null;
+      if (area !== "sync" || !changes) return;
+      if ("dropZoneCorner" in changes) cornerSetting = null;
+      if ("dropZone" in changes) {
+        enabled = changes.dropZone.newValue !== false;
+        if (!enabled) hide();
+      }
     });
   } catch (e) {}
 
@@ -308,6 +315,7 @@
     // Pages can dispatch synthetic drag events; only a real drag may show the zone.
     if (!e.isTrusted) return;
     hide();
+    if (!enabled) return;
     const point = { x: e.clientX, y: e.clientY };
     const media = mediaForDrag(e);
     if (!media) return;
