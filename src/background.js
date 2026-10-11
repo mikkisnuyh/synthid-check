@@ -249,6 +249,8 @@ function toBlob(value, type) {
 // otherwise create duplicate ids.
 let menusBuild = Promise.resolve();
 
+const MEDIA_CONTEXTS = ["image", "video", "audio"];
+
 function createMenus() {
   menusBuild = menusBuild
     .then(() => browser.menus.removeAll())
@@ -256,7 +258,7 @@ function createMenus() {
       browser.menus.create({
         id: "check-media",
         title: "Check with SynthID",
-        contexts: ["image", "video", "audio"],
+        contexts: MEDIA_CONTEXTS,
       });
       browser.menus.create({
         id: "find-media",
@@ -266,6 +268,22 @@ function createMenus() {
     })
     .catch((e) => console.warn("SynthID Check: creating menus failed", e));
   return menusBuild;
+}
+
+// "Find media under the cursor" is the fallback for when the browser doesn't
+// report an image, video or audio element. Its "link" and "frame" contexts also
+// match on media inside a link or a frame (every Google Images result), so hide
+// it whenever "Check with SynthID" is shown. The item's visibility outlives an
+// event page unload, so set it on every show rather than caching it here.
+if (browser.menus.onShown) {
+  browser.menus.onShown.addListener((info) => {
+    // Not info.menuIds: a hidden item is missing from it, so it would never come back.
+    const hasMedia = (info.contexts || []).some((c) => MEDIA_CONTEXTS.includes(c));
+    browser.menus
+      .update("find-media", { visible: !hasMedia })
+      .then(() => browser.menus.refresh())
+      .catch((e) => console.warn("SynthID Check: updating the menu failed", e));
+  });
 }
 
 browser.runtime.onInstalled.addListener(() => {

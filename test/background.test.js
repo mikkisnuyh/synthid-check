@@ -77,6 +77,8 @@ function makeEnv(opts = {}) {
     menusCreate: [],
     menusRemoveAll: 0,
     menusDuplicate: [],
+    menusUpdate: [],
+    menusRefresh: 0,
     permissionsRequest: [],
     permissionsContains: [],
     executeScript: [],
@@ -112,6 +114,7 @@ function makeEnv(opts = {}) {
 
   const events = {
     menusOnClicked: makeEvent(),
+    menusOnShown: makeEvent(),
     onInstalled: makeEvent(),
     onStartup: makeEvent(),
     onMessage: makeEvent(),
@@ -170,7 +173,14 @@ function makeEnv(opts = {}) {
         env.menuIds.add(props.id);
         return props.id;
       },
+      update: async (id, props) => {
+        calls.menusUpdate.push({ id, props });
+      },
+      refresh: async () => {
+        calls.menusRefresh++;
+      },
       onClicked: events.menusOnClicked,
+      onShown: events.menusOnShown,
     },
     commands: { onCommand: events.commandsOnCommand },
     permissions: {
@@ -424,6 +434,23 @@ test("onInstalled creates the two menu items with the contract ids and contexts"
     { id: "check-media", title: "Check with SynthID", contexts: ["image", "video", "audio"] },
     { id: "find-media", title: "Find media under the cursor and check with SynthID", contexts: ["page", "frame", "link"] },
   ]);
+});
+
+test("the fallback item is hidden when the menu is on media, even media inside a link or frame", async () => {
+  const env = await loadBackground();
+  const cases = [
+    { contexts: ["image", "link"], visible: false }, // Google Images: a thumbnail inside a link
+    { contexts: ["video", "frame"], visible: false },
+    { contexts: ["audio"], visible: false },
+    { contexts: ["link"], visible: true },
+    { contexts: ["frame"], visible: true },
+    { contexts: ["page"], visible: true },
+  ];
+  for (const [i, c] of cases.entries()) {
+    env.events.menusOnShown.fire({ contexts: c.contexts, menuIds: [] }, sourceTab());
+    await waitFor(() => env.calls.menusRefresh === i + 1, `refresh after ${c.contexts}`);
+    assert.deepEqual(env.calls.menusUpdate[i], { id: "find-media", props: { visible: c.visible } }, c.contexts.join());
+  }
 });
 
 // ---------------------------------------------------------------------------
