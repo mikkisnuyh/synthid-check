@@ -12,13 +12,17 @@ When you initiate a SynthID check, the media file you selected is downloaded fro
 
 With the drop zone setting on (the default), a small script runs on every page you open, only to notice when you start dragging an image. It reads nothing from the page and sends nothing anywhere unless you drop an image on the drop zone, which starts a check as described above. You can turn it off in the settings in the toolbar menu.
 
+## Right-click target (Chrome only)
+
+In Chrome, a small script on every page remembers which element you last right-clicked, so "Find media under the cursor" knows where to look. Firefox tells the extension this itself, so the script isn't used there. It keeps only a reference to that element in the page, reads nothing from it until you choose "Find media under the cursor", and sends nothing anywhere.
+
 ## Settings storage
 
-Your extension settings (e.g., whether to open synthid.com in the foreground) are stored in Firefox Sync storage, which is governed by Firefox's privacy practices.
+Your extension settings (e.g., whether to open synthid.com in the foreground) are stored in the browser's sync storage (Firefox Sync, or Chrome sync if you use it), which is governed by the browser's privacy practices.
 
 ## Pending file storage
 
-While awaiting upload to synthid.com, the selected file is stored locally in the extension's IndexedDB for at most 10 minutes, or until the tab is closed, whichever comes first. It is never transmitted or logged.
+While awaiting upload to synthid.com, the selected file is stored locally in the extension's IndexedDB for at most 10 minutes, or until the tab is closed, whichever comes first. It is never transmitted or logged. Files from private windows are never written to disk; they are kept only in the extension's memory.
 
 ## Questions?
 

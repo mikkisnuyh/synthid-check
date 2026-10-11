@@ -270,6 +270,12 @@ function makeEnv(opts = {}) {
       onChanged: events.storageOnChanged,
     },
   };
+  if (opts.chrome) {
+    // Chrome has the same API under the name contextMenus.
+    browser.contextMenus = browser.menus;
+    delete browser.menus;
+    delete browser.contextMenus.onShown; // Chrome has no onShown
+  }
   env.browser = browser;
 
   env.indexedDB = new IDBFactory();
@@ -333,6 +339,7 @@ function makeEnv(opts = {}) {
     indexedDB: env.indexedDB,
     IDBKeyRange,
   };
+  if (opts.chrome) sandbox.location = { protocol: "chrome-extension:" };
   env.context = vm.createContext(sandbox);
   return env;
 }
@@ -451,6 +458,20 @@ test("the fallback item is hidden when the menu is on media, even media inside a
     await waitFor(() => env.calls.menusRefresh === i + 1, `refresh after ${c.contexts}`);
     assert.deepEqual(env.calls.menusUpdate[i], { id: "find-media", props: { visible: c.visible } }, c.contexts.join());
   }
+});
+
+test("Chrome: menus are created and clicks handled through contextMenus", async () => {
+  const env = await loadBackground({ chrome: true });
+  env.events.onInstalled.fire({ reason: "install" });
+  await waitFor(() => env.calls.menusCreate.length === 2, "two contextMenus.create calls");
+  assert.deepEqual(env.calls.menusCreate.map((m) => m.id), ["check-media", "find-media"]);
+  assert.equal(env.events.menusOnClicked.listeners.length, 1);
+
+  env.fetchHandler = async () => pngResponse();
+  const tab = env.addTab(sourceTab());
+  env.click(imageClick(CDN_PNG), tab);
+  await waitFor(() => env.calls.tabsCreate.length === 1, "tabs.create");
+  assert.equal(env.calls.fetch[0].url, CDN_PNG);
 });
 
 // ---------------------------------------------------------------------------
@@ -973,6 +994,75 @@ test("private window data: URL media also stays out of IndexedDB", async () => {
 // ---------------------------------------------------------------------------
 // 8. find-media
 
+// Runs an injected func the way the content script world would, with the given globals.
+function runInjected(details, globals) {
+  return vm.runInNewContext(`(${details.func})(...args)`, { ...globals, args: details.args });
+}
+
+test("find-media: the injected script asks Firefox for the right-clicked element", async () => {
+  const env = await loadBackground();
+  const el = { tag: "img" };
+  const media = { kind: "image", url: CDN_PNG, isBlob: false, isMediaSource: false };
+  const asked = [];
+  let finderResult;
+  env.scriptHandler = (d) => {
+    if (!d.func) return [{}];
+    if (d.args && d.args.length === 1 && !finderResult) {
+      finderResult = runInjected(d, {
+        browser: { menus: { getTargetElement: (id) => (asked.push(id), el) } },
+        SynthIDResolve: { fromElement: (e) => (e === el ? media : null) },
+      });
+      return [{ result: finderResult }];
+    }
+    return [{ result: undefined }];
+  };
+  env.fetchHandler = async () => pngResponse();
+  env.click({ menuItemId: "find-media", pageUrl: PAGE_URL, frameId: 0, targetElementId: 42 }, env.addTab(sourceTab()));
+  await waitFor(() => env.synthidTabs().length === 1, "synthid tab");
+  assert.deepEqual(asked, [42]);
+  assert.deepEqual(finderResult, media);
+});
+
+test("Chrome: find-media starts from the element context-target.js remembered", async () => {
+  const env = await loadBackground({ chrome: true });
+  const el = { tag: "img" };
+  const media = { kind: "image", url: CDN_PNG, isBlob: false, isMediaSource: false };
+  let finder;
+  env.scriptHandler = (d) => {
+    if (!d.func) return [{}];
+    if (!finder) {
+      finder = d;
+      // Chrome's content scripts have no menus API.
+      const result = runInjected(d, {
+        browser: {},
+        SynthIDContextTarget: { take: () => el },
+        SynthIDResolve: { fromElement: (e) => (e === el ? media : null) },
+      });
+      return [{ result }];
+    }
+    return [{ result: undefined }];
+  };
+  env.fetchHandler = async () => pngResponse();
+  // Chrome's click info has no targetElementId.
+  env.click({ menuItemId: "find-media", pageUrl: PAGE_URL, frameId: 0 }, env.addTab(sourceTab()));
+  await waitFor(() => env.synthidTabs().length === 1, "synthid tab");
+  assert.deepEqual(finder.args, [null]);
+  assert.equal(env.calls.fetch[0].url, CDN_PNG);
+});
+
+test("Chrome: find-media says nothing was found when no right-click was remembered", async () => {
+  const env = await loadBackground({ chrome: true });
+  env.scriptHandler = (d) => {
+    if (!d.func) return [{}];
+    return [{ result: runInjected(d, { browser: {}, SynthIDResolve: { fromElement: () => assert.fail("no element") } }) }];
+  };
+  const tab = env.addTab(sourceTab());
+  env.click({ menuItemId: "find-media", pageUrl: PAGE_URL, frameId: 0 }, tab);
+  await waitFor(() => bannerCalls(env, 5).length === 1, "notice");
+  assert.equal(bannerCalls(env, 5)[0].args[0].message, "No image, video or audio found here.");
+  assert.equal(env.synthidTabs().length, 0);
+});
+
 test("find-media on a page whose media is same-origin still works when the background fetch is unavailable", async () => {
   const env = await loadBackground({ allSites: false, requestResult: false });
   const media = { kind: "image", url: "https://example.com/a.png", isBlob: false, isMediaSource: false };
@@ -1215,11 +1305,30 @@ test("a blob: image from the picker is read inside the source frame", async () =
   await waitFor(() => env.synthidTabs().length === 1, "synthid tab");
   const read = env.calls.executeScript.find((d) => d.func);
   assert.deepEqual(read.target, { tabId: 5, frameIds: [0] });
-  assert.deepEqual(read.args, ["blob:https://example.com/abc"]);
+  assert.deepEqual(read.args, ["blob:https://example.com/abc", false]);
   assert.equal(env.calls.fetch.length, 0);
   const reply = await getPending(env, env.synthidTabs()[0].id);
   assert.equal(reply.sourceUrl, PAGE_URL);
   assert.equal(reply.name, "synthid-check.png");
+  assert.deepEqual(await bytesOf(reply.blob), Array.from(PNG));
+});
+
+test("Chrome: a blob: image is read in the frame as bytes, since executeScript can't return a Blob", async () => {
+  const env = await loadBackground({ chrome: true });
+  const tab = env.addTab(sourceTab());
+  env.scriptHandler = (d) => {
+    if (d.files) return [{}];
+    // An ArrayBuffer of the worker's own realm, as Chrome delivers it.
+    const bytes = new (vm.runInContext("Uint8Array", env.context))(PNG);
+    return [{ result: { ok: true, blob: bytes.buffer, type: "image/png" } }];
+  };
+  const media = { kind: "image", url: "blob:https://example.com/abc", isBlob: true, isMediaSource: false };
+  await env.send({ type: "synthid:picked", media }, { id: EXT_ID, url: PAGE_URL, tab, frameId: 0 });
+  await waitFor(() => env.synthidTabs().length === 1, "synthid tab");
+  const read = env.calls.executeScript.find((d) => d.func);
+  assert.deepEqual(read.args, ["blob:https://example.com/abc", true]);
+  const reply = await getPending(env, env.synthidTabs()[0].id);
+  assert.equal(reply.blob.type, "image/png");
   assert.deepEqual(await bytesOf(reply.blob), Array.from(PNG));
 });
 
@@ -1535,7 +1644,7 @@ test("synthid:dropped reads a blob: image in the frame that sent it", async () =
   await waitFor(() => env.synthidTabs().length === 1, "synthid tab");
   const read = env.calls.executeScript.find((d) => d.func);
   assert.deepEqual(read.target, { tabId: 5, frameIds: [7] });
-  assert.deepEqual(read.args, ["blob:https://ads.example.net/abc"]);
+  assert.deepEqual(read.args, ["blob:https://ads.example.net/abc", false]);
   assert.equal(env.calls.fetch.length, 0);
   const reply = await getPending(env, env.synthidTabs()[0].id);
   assert.deepEqual(await bytesOf(reply.blob), Array.from(PNG));

@@ -6,6 +6,22 @@ It never calls synthid.com's backend directly, never auto-accepts the site's Ter
 
 No build step. Plain scripts, using the `browser.*` promise API.
 
+## Chrome
+
+`npm run build:chrome` runs `scripts/build-chrome.js`, which copies `src/` and `icons/` to `dist/chrome`, merges `chrome/manifest.json` over `manifest.json` (objects merge, other values replace, `null` removes a key, a `+key` array is appended to `key`), renames the `menus` permission to `contextMenus`, and writes `service-worker.js`, which `importScripts` the files listed in `background.scripts`. Code that differs by browser checks for the API rather than the browser. The differences:
+
+- **Chrome 148 or later.** It has the `browser.*` namespace with promises, and with `"message_serialization": "structured_clone"` a `Blob` crosses runtime messaging as in Firefox (the `getPending` reply).
+- **Service worker.** Chrome stops it when idle, so state in its memory can vanish between events. Everything the background keeps in memory is either re-derived at startup or only needed within one check, except private-window files (below).
+- **Menus.** `const menus = browser.menus || browser.contextMenus`.
+- **Find media under the cursor.** Chrome has no `menus.getTargetElement` and no `targetElementId`. `src/content/context-target.js`, a Chrome-only content script on all pages and frames (`document_start`, left out of the Firefox build by `web-ext-config.mjs`), keeps a `WeakRef` to the target of the last trusted `contextmenu` event; the find-media script calls `SynthIDContextTarget.take()` when `getTargetElement` isn't there.
+- **Files read inside a page.** Chrome's `executeScript` returns a `Blob` as `{}`, but an `ArrayBuffer` survives. When the background runs from a `chrome-extension:` URL (`BYTES_FROM_PAGES`), the in-page fetch and the `blob:` reader return `await blob.arrayBuffer()`; `toBlob` turns it back into a `Blob`.
+- **Private windows.** `"incognito": "split"`: Chrome runs a separate copy for Incognito. As in Firefox, its pending files stay in memory, never in IndexedDB. Chrome may stop the service worker while the user signs in, which loses the file; they then start the check again.
+- **Shortcuts.** Chrome has no `commands.update`/`reset`. The settings view shows each shortcut as a button that opens `chrome://extensions/shortcuts`.
+- **Drop zone.** Chrome makes an image inside a link the `dragstart` target, so the `application/x-moz-nativeimage` check isn't needed there.
+- **Manifest.** PNG icons (Chrome doesn't show SVG manifest icons), a description of at most 132 characters, no `browser_specific_settings`.
+
+`npm run test:chrome` (`test/chrome/smoke.test.js`) builds the Chrome zip and loads that zip, unpacked, in Chromium with Playwright and runs Check with SynthID, Find media under the cursor, a `blob:` image, drag and drop (plain and linked images) and the settings view, against a local HTTPS stand-in for synthid.com (`--host-resolver-rules`).
+
 Scripts are injected on demand, with one exception: while the `dropZone` setting is on, `resolve.js` and `dropzone.js` are registered as content scripts for all pages and frames (see Drop zone).
 
 ## Files
