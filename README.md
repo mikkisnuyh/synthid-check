@@ -91,13 +91,9 @@ Both versions share the code in `src/`. `manifest.json` is the Firefox manifest;
 
 GitHub Actions runs `npm run lint`, `npm test` (on Node 22 and 24), `npm run test:chrome` and both builds on every pull request and push to `main`. The Firefox and Chrome zips are attached to each run as artifacts. `npm run test:live` isn't run in CI because it uses the live synthid.com.
 
-To release, bump `version` in both `manifest.json` and `package.json`, then push a matching tag:
+To release, bump `version` in both `manifest.json` and `package.json`, then publish a GitHub release (on the website or in the GitHub app) with a new tag matching the version, such as `v0.2.0`, targeting `main`. Pushing a tag alone doesn't start a release.
 
-```bash
-git tag v0.2.0 && git push origin v0.2.0
-```
-
-The release workflow checks that the tag matches both versions, runs lint and tests, builds, and creates a GitHub release with the zip. If the repository has the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets (API credentials from addons.mozilla.org), it also submits the build to AMO for signing. The channel is `listed` by default; set the `AMO_CHANNEL` repository variable to `unlisted` to get a self-distributed signed `.xpi`, which is then attached to the release as well.
+The release workflow checks that the tag matches both versions, runs lint and tests, builds, and attaches the zip to the release. If the repository has the `AMO_JWT_ISSUER` and `AMO_JWT_SECRET` secrets (API credentials from addons.mozilla.org), it also submits the build to AMO for signing. The channel is `listed` by default; set the `AMO_CHANNEL` repository variable to `unlisted` to get a self-distributed signed `.xpi`, which is then attached to the release as well.
 
 After the Firefox steps, it builds the Chrome zip and attaches it to the release too; a failed Chrome build never holds up the Firefox release. If the repository has the `CWS_EXTENSION_ID`, `CWS_PUBLISHER_ID`, `CWS_CLIENT_ID`, `CWS_CLIENT_SECRET` and `CWS_REFRESH_TOKEN` secrets, it then uploads the zip to the Chrome Web Store and submits it for review. The first version has to be uploaded by hand in the Chrome Web Store developer dashboard, which is where the extension ID comes from.
 
