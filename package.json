@@ -1,6 +1,6 @@
 {
   "name": "synthid-firefox-extension",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Firefox extension: right-click media to check it for a SynthID watermark on synthid.com",
   "license": "MIT",
