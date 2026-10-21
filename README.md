@@ -1,5 +1,7 @@
 # SynthID Check
 
+Install from the [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/synthid-check/) store or the [Chrome Web Store](https://chrome.google.com/webstore/detail/mjicegnbongnocknmmmgfkcogeaakgdf).
+
 Drag an image onto the drop box, or right-click an image, video, or audio element, to check it for a SynthID watermark. The original file is attached to Google's official SynthID Detector at synthid.com in a new tab, where you sign in and see the detection result.
 
 ## How to use
