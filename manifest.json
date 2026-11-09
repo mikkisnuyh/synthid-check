@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SynthID Check",
   "version": "1.0.1",
-  "description": "Checks images, video and audio for SynthID watermarks. Drag a file onto the page box, right-click media to \"Check with SynthID,\" or pick media on the page. Opens Google's detector at synthid.com so you can sign in and view the result.",
+  "description": "Checks images, video and audio for SynthID watermarks only. Drag an image onto the box, right-click or pick media on the page. Opens Google's detector at synthid.com. A missing watermark doesn't prove a human made it; text isn't supported.",
   "icons": {
     "48": "icons/icon.svg",
     "96": "icons/icon.svg"
