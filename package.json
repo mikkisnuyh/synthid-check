@@ -17,7 +17,7 @@
     "fake-indexeddb": "^6.2.7",
     "jsdom": "^31.0.0",
     "playwright": "^1.64.1",
-    "web-ext": "^10.7.0"
+    "web-ext": "^10.8.0"
   },
   "overrides": {
     "shell-quote": "^1.12.0"
