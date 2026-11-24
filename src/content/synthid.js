@@ -47,8 +47,9 @@
     return false;
   }
 
-  // synthid.com keeps its state in localStorage ("firstTime"), written once the app has
-  // started: {isInitialized, termsAccepted, ...}. null until then.
+  // synthid.com keeps its Terms state in localStorage ("firstTime"). Today it is written when the
+  // Terms are accepted: {termsVersion: 2}. Older versions wrote {isInitialized, termsAccepted, ...}
+  // at startup. null until written.
   function siteState() {
     try {
       const v = JSON.parse(localStorage.getItem("firstTime") || "null");
@@ -59,11 +60,21 @@
   }
 
   // true: Terms accepted and no dialog; false: not (yet) accepted; null: unknown format.
+  // A stored termsVersion may be older than the one the site now asks for; the site then shows
+  // the dialog again, before its upload field, which run() waits for first.
   function termsAccepted() {
     const st = siteState();
-    if (!st || !("termsAccepted" in st)) return null;
-    return st.termsAccepted === true && !termsShown();
+    if (!st) return null;
+    let accepted;
+    if ("termsVersion" in st) accepted = typeof st.termsVersion === "number" && st.termsVersion > 0;
+    else if ("termsAccepted" in st) accepted = st.termsAccepted === true;
+    else return null;
+    return accepted && !termsShown();
   }
+
+  // Set once the site's Terms state couldn't be read within SITE_STATE_MAX_MS (its format
+  // changed), so later checks go by the dialog alone instead of waiting that long again.
+  let termsFormatUnknown = false;
 
   // The account button shows a profile picture (or monogram) only when signed in.
   function avatarSignedIn() {
@@ -110,9 +121,11 @@
   // so collapsed FAQ answers on the home page don't count.
   function pageOutcome() {
     const t = document.body ? document.body.innerText || document.body.textContent || "" : "";
-    if (/something went wrong|quota again in/i.test(t)) return "error";
+    if (/something went wrong|quota again in|quota for .* has been exceeded/i.test(t)) return "error";
     if (!/-detection\b/.test(location.pathname)) return null;
-    if (/Analysis Results|SynthID was (not )?detected|Unable to determine/i.test(t)) return "result";
+    if (/Analysis Results|SynthID was (not )?detected|Unable to determine|We are unsure if|select a higher quality file/i.test(t)) {
+      return "result";
+    }
     if (/Detecting\.\.\./i.test(t)) return "detecting";
     return null;
   }
@@ -306,11 +319,13 @@
   async function termsReady() {
     for (;;) {
       if (dismissed) return false;
-      // Wait until the site has started and recorded its Terms state, or shows the dialog.
-      const known = await waitFor(() => termsShown() || termsAccepted() !== null, SITE_STATE_MAX_MS);
+      // Wait until the site has recorded its Terms state, or shows the dialog.
+      const isKnown = () => termsShown() || termsAccepted() !== null;
+      const known = termsFormatUnknown ? isKnown() : await waitFor(isKnown, SITE_STATE_MAX_MS);
       if (dismissed) return false;
       if (!known) {
         // Unknown storage format (site changed): fall back to the dialog alone.
+        termsFormatUnknown = true;
         return !termsShown() || (await waitTermsGone());
       }
       if (termsAccepted() === true) return true;
