@@ -100,7 +100,9 @@ function setup({ termsAccepted = true, termsDialog = false, signInOnAttach = fal
 
   w.indexedDB = new IDBFactory();
   if (siteState) {
-    w.localStorage.setItem("firstTime", JSON.stringify({ isInitialized: true, termsAccepted }));
+    // true: the format synthid.com used to write; an object: stored as given.
+    const stored = siteState === true ? { isInitialized: true, termsAccepted } : siteState;
+    w.localStorage.setItem("firstTime", JSON.stringify(stored));
   }
   if (faqText) {
     const faq = w.document.createElement("div");
@@ -216,6 +218,9 @@ function setup({ termsAccepted = true, termsDialog = false, signInOnAttach = fal
         result: "Analysis Results SynthID was not detected",
         error: "error Something went wrong! Please wait and try again later",
         quota: "You will start having image quota again in 3 hours",
+        quotaExceeded: "Quota Exceeded The quota for images similar to this one has been exceeded Please wait for 2 hours and try again",
+        unsure: "Unsure We are unsure if the image has been made with AI from a SynthID partner.",
+        lowQuality: "Low quality Please select a higher quality file",
       }[kind];
     },
     onDetectionPage: () => !!detection,
@@ -313,6 +318,38 @@ test("first visit: waits for the site's state and never attaches while the Terms
   env.close();
 });
 
+test("current site format: Terms accepted as {termsVersion: 2} attaches without waiting for a timeout", async () => {
+  const env = setup({ siteState: { termsVersion: 2 } });
+  env.start();
+  await until(() => env.log.includes("change"), "attach", 1500);
+  env.close();
+});
+
+test("current site format, first visit: attaches right after the user accepts the Terms", async () => {
+  const env = setup({ siteState: false, termsDialog: true });
+  env.start();
+  await until(() => env.banner() && /Accept the terms/.test(env.banner().text), "terms banner");
+  await sleep(500);
+  assert.ok(!env.log.includes("change"), "not attached before acceptance");
+  // Accepting stores {termsVersion: 2} and removes the dialog.
+  env.w.localStorage.setItem("firstTime", JSON.stringify({ termsVersion: 2 }));
+  env.w.document.getElementById("agree").remove();
+  await until(() => env.log.includes("change"), "attach after acceptance", 1500);
+  env.close();
+});
+
+test("current site format with an outdated Terms version: no attach while the dialog shows", async () => {
+  const env = setup({ siteState: { termsVersion: 1 }, termsDialog: true });
+  env.start();
+  await until(() => env.banner() && /Accept the terms/.test(env.banner().text), "terms banner");
+  await sleep(500);
+  assert.ok(!env.log.includes("change"), "not attached while the dialog shows");
+  env.w.localStorage.setItem("firstTime", JSON.stringify({ termsVersion: 2 }));
+  env.w.document.getElementById("agree").remove();
+  await until(() => env.log.includes("change"), "attach after acceptance", 1500);
+  env.close();
+});
+
 test("Terms not accepted yet but the dialog renders late: still no attach", async () => {
   const env = setup({ termsAccepted: false });
   env.start();
@@ -396,6 +433,23 @@ test("the site's quota message gets the same neutral error banner", async () => 
   await until(() => env.banner() && /Unexpected error/.test(env.banner().text), "error banner");
   env.close();
 });
+
+test("the site's Quota Exceeded card gets the same neutral error banner", async () => {
+  const env = await attachedSignedIn();
+  env.showOutcome("quotaExceeded");
+  await until(() => env.banner() && /Unexpected error/.test(env.banner().text), "error banner");
+  env.close();
+});
+
+for (const kind of ["unsure", "lowQuality"]) {
+  test(`the site's ${kind} card counts as a result, not an error`, async () => {
+    const env = await attachedSignedIn();
+    env.showOutcome(kind);
+    await sleep(300);
+    assert.ok(!env.banner() || !/Unexpected error/.test(env.banner().text), "no error banner");
+    env.close();
+  });
+}
 
 test("result wording on the home page (FAQ) is never taken as a result", async () => {
   const env = setup({ faqText: "How do I interpret detection results? Analysis Results SynthID was detected" });

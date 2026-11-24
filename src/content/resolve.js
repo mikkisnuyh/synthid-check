@@ -185,15 +185,65 @@
     return fromStack(stackAt(x, y), null);
   }
 
+  // A loaded <img> showing this URL, searching open shadow roots too.
+  function loadedImageFor(url) {
+    const doc = globalThis.document;
+    if (!doc) return null;
+    const roots = [doc];
+    for (let i = 0; i < roots.length && i < 500; i++) {
+      let nodes;
+      try {
+        nodes = roots[i].querySelectorAll("*");
+      } catch (e) {
+        continue;
+      }
+      for (const el of nodes) {
+        if (el.shadowRoot) roots.push(el.shadowRoot);
+        if (
+          el.localName === "img" &&
+          (el.currentSrc === url || el.src === url) &&
+          el.complete &&
+          el.naturalWidth > 0 &&
+          !isOverlay(el)
+        ) {
+          return el;
+        }
+      }
+    }
+    return null;
+  }
+
+  // Pages often revoke a blob: URL as soon as the image has loaded, so it can no
+  // longer be fetched. The decoded image is still there: copy its pixels into a PNG. Lossless,
+  // and the pixels are what SynthID checks. Returns null if the canvas is tainted or fails.
+  async function captureImage(url) {
+    const img = loadedImageFor(url);
+    if (!img) return null;
+    try {
+      const canvas = globalThis.document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      return blob && blob.size ? blob : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   async function readBlobUrl(url) {
+    let error;
     try {
       const res = await fetch(url);
       const blob = await res.blob();
       if (blob.size > MAX_BLOB_BYTES) return { ok: false, error: "too large" };
       return { ok: true, blob, type: blob.type };
     } catch (e) {
-      return { ok: false, error: String(e) };
+      error = String(e);
     }
+    const copy = await captureImage(url);
+    if (copy && copy.size <= MAX_BLOB_BYTES) return { ok: true, blob: copy, type: copy.type };
+    return { ok: false, error };
   }
 
   const api = { fromElement, fromPoint, readBlobUrl };

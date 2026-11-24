@@ -31,7 +31,7 @@ const ZONE_CENTER = { x: VIEWPORT.width - 16 - 120, y: 16 + 66 };
 // Stands in for synthid.com: the site's stored Terms state and an upload field that
 // records what was attached.
 const FAKE_SYNTHID = `<!doctype html><title>synthid stand-in</title>
-<script>localStorage.setItem("firstTime", JSON.stringify({ isInitialized: true, termsAccepted: true }));</script>
+<script>localStorage.setItem("firstTime", JSON.stringify({ termsVersion: 2 }));</script>
 <input type="file" id="upload">
 <script>
   window.attached = null;
@@ -49,8 +49,15 @@ const SOURCE_PAGE = `<!doctype html><body style="margin:0">
   <div id="overlay" style="position:absolute;inset:0"></div>
 </div>
 <img id="blobimg" style="position:absolute;left:600px;top:450px;width:100px;height:100px">
+<img id="revoked" style="position:absolute;left:750px;top:450px;width:100px;height:100px">
 <script>
   fetch("/img.png").then((r) => r.blob()).then((b) => { document.getElementById("blobimg").src = URL.createObjectURL(b); });
+  // The blob: URL is revoked as soon as the image has loaded.
+  fetch("/img.png").then((r) => r.blob()).then((b) => {
+    const img = document.getElementById("revoked");
+    img.onload = () => { URL.revokeObjectURL(img.src); img.dataset.revoked = "1"; };
+    img.src = URL.createObjectURL(b);
+  });
 </script>`;
 
 let server;
@@ -141,7 +148,9 @@ async function waitForValue(fn, what, timeoutMs = 15000) {
 async function sourcePage() {
   const page = await context.newPage();
   await page.goto(origin + "/");
-  await page.waitForFunction(() => document.getElementById("blobimg").complete && document.getElementById("blobimg").src);
+  await page.waitForFunction(
+    () => document.getElementById("blobimg").complete && document.getElementById("blobimg").src && document.getElementById("revoked").dataset.revoked,
+  );
   return page;
 }
 
@@ -238,6 +247,19 @@ test("a blob: image is read inside the page and arrives intact", async () => {
   const file = await attachedFile();
   assert.equal(file.type, "image/png");
   assert.deepEqual(file.bytes, Array.from(PNG));
+  await closeSynthidTabs();
+  await page.close();
+});
+
+test("a revoked blob: image is copied from the loaded image", async () => {
+  const page = await sourcePage();
+  const src = await page.evaluate(() => document.getElementById("revoked").src);
+  assert.match(src, /^blob:/);
+  assert.equal(await page.evaluate((u) => fetch(u).then(() => "fetched", () => "revoked"), src), "revoked");
+  await menuClick(page, { menuItemId: "check-media", srcUrl: src, mediaType: "image" });
+  const file = await attachedFile();
+  assert.equal(file.type, "image/png");
+  assert.deepEqual(file.bytes.slice(0, 8), [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   await closeSynthidTabs();
   await page.close();
 });
